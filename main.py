@@ -184,25 +184,27 @@ def descargar_historico():
     )
 
 # ================================
-# EJECUTAR /REPORTE AUTOMÁTICAMENTE AL INICIAR (DETALLADO)
+# EJECUTAR /REPORTE AUTOMÁTICAMENTE AL INICIAR (ASCII SEGURO)
 # ================================
-def limpiar_texto(texto):
-    if isinstance(texto, str):
-        return unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('ascii')
-    return texto
+def log_ascii(texto):
+    if not isinstance(texto, str):
+        texto = str(texto)
+    return unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('ascii')
 
 def actualizar_historico_automatico():
     try:
-        print("⏳ Ejecutando /reporte automáticamente...")
+        print(log_ascii("⏳ Ejecutando /reporte automáticamente..."))
         r = requests.get("https://zqfarma.onrender.com/reporte", timeout=30)
         data = r.json()
-        print(f"✅ Histórico actualizado automáticamente. Total nuevos: {data.get('total', 0)}")
+        print(log_ascii(f"✅ Histórico actualizado automáticamente. Total nuevos: {data.get('total', 0)}"))
         for reg in data.get("nuevos", []):
-            print({k: limpiar_texto(v) for k, v in reg.items()})
+            reg_limpio = {log_ascii(k): log_ascii(v) for k, v in reg.items()}
+            print(reg_limpio)
     except Exception as e:
-        print(f"⚠ No se pudo actualizar automáticamente el histórico: {e}")
+        print(log_ascii(f"⚠ No se pudo actualizar automáticamente el histórico: {e}"))
 
 threading.Thread(target=actualizar_historico_automatico).start()
+
 
 
 

@@ -54,7 +54,7 @@ def crear_dbf_historico():
         table = Table(HISTORICO_DBF, CAMPOS_HISTORICO, codepage="cp850")
         table.open(mode=READ_WRITE)
         table.close()
-        print("✅ VENTAS_HISTORICO.DBF creado.")
+        print("VENTAS_HISTORICO.DBF creado.")
 
 def leer_dbf_existente():
     if not os.path.exists(HISTORICO_DBF):
@@ -80,7 +80,7 @@ def obtener_costo_producto(pronum, productos):
 @app.get("/")
 def home():
     return {
-        "mensaje": "✅ API activa en Render",
+        "mensaje": "API activa en Render",
         "usar_endpoint": "/historico → Devuelve datos guardados",
         "actualizar": "/reporte → Actualiza el histórico",
         "descargar": "/descargar/historico → Descarga el archivo DBF"
@@ -184,7 +184,7 @@ def descargar_historico():
     )
 
 # ================================
-# EJECUTAR /REPORTE AUTOMÁTICAMENTE AL INICIAR (ASCII SEGURO)
+# EJECUTAR /REPORTE AUTOMÁTICAMENTE AL INICIAR (SIN ASCII RARO)
 # ================================
 def log_ascii(texto):
     if not isinstance(texto, str):
@@ -193,17 +193,18 @@ def log_ascii(texto):
 
 def actualizar_historico_automatico():
     try:
-        print(log_ascii("⏳ Ejecutando /reporte automáticamente..."))
+        print("Ejecutando /reporte automaticamente...")
         r = requests.get("https://zqfarma.onrender.com/reporte", timeout=30)
         data = r.json()
-        print(log_ascii(f"✅ Histórico actualizado automáticamente. Total nuevos: {data.get('total', 0)}"))
+        print("Historico actualizado automaticamente. Total nuevos: " + str(data.get('total', 0)))
         for reg in data.get("nuevos", []):
             reg_limpio = {log_ascii(k): log_ascii(v) for k, v in reg.items()}
             print(reg_limpio)
     except Exception as e:
-        print(log_ascii(f"⚠ No se pudo actualizar automáticamente el histórico: {e}"))
+        print("No se pudo actualizar automaticamente el historico: " + log_ascii(e))
 
 threading.Thread(target=actualizar_historico_automatico).start()
+
 
 
 

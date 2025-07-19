@@ -6,6 +6,7 @@ from dbf import Table, READ_WRITE
 from datetime import datetime
 import threading
 import requests
+import unicodedata
 import os
 
 # ================================
@@ -48,6 +49,12 @@ CAMPOS_HISTORICO = (
 # ================================
 # FUNCIONES AUXILIARES
 # ================================
+def limpiar_ascii(texto):
+    """Convierte texto a ASCII seguro para evitar errores en Render"""
+    if isinstance(texto, str):
+        return unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('ascii')
+    return texto
+
 def crear_dbf_historico():
     if not os.path.exists(HISTORICO_DBF):
         table = Table(HISTORICO_DBF, CAMPOS_HISTORICO, codepage="cp850")
@@ -89,7 +96,9 @@ def historico_json():
     if not os.path.exists(HISTORICO_DBF):
         return {"total": 0, "datos": []}
     datos = list(DBF(HISTORICO_DBF, load=True, encoding="cp850"))
-    return {"total": len(datos), "datos": datos}
+    # Limpiar para evitar errores ASCII en Render
+    datos_limpios = [{k: limpiar_ascii(v) for k, v in row.items()} for row in datos]
+    return {"total": len(datos_limpios), "datos": datos_limpios}
 
 @app.get("/reporte")
 def generar_reporte():
@@ -166,10 +175,16 @@ def generar_reporte():
         if nuevos_registros:
             agregar_al_historico(nuevos_registros)
 
-        return {"total": len(nuevos_registros), "nuevos": nuevos_registros}
+        # 🔥 Limpiar todo antes de devolver
+        registros_limpios = [
+            {k: limpiar_ascii(v) for k, v in reg.items()}
+            for reg in nuevos_registros
+        ]
+
+        return {"total": len(registros_limpios), "nuevos": registros_limpios}
 
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": limpiar_ascii(e)}
 
 @app.get("/descargar/historico")
 def descargar_historico():
@@ -191,6 +206,7 @@ def actualizar_historico_automatico():
         pass
 
 threading.Thread(target=actualizar_historico_automatico).start()
+
 
 
 

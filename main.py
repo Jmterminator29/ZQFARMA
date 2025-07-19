@@ -6,7 +6,12 @@ from dbf import Table, READ_WRITE
 from datetime import datetime
 import threading
 import requests
+import json
+import sys
 import os
+
+# Forzar UTF-8 en la salida
+sys.stdout.reconfigure(encoding='utf-8')
 
 # ================================
 # CONFIGURACIÓN FASTAPI
@@ -188,11 +193,13 @@ def descargar_historico():
 def actualizar_historico_automatico():
     try:
         print("⏳ Ejecutando /reporte automáticamente...")
-        requests.get("https://zqfarma.onrender.com/reporte", timeout=20)
-        print("✅ Histórico actualizado automáticamente al iniciar Render")
-    except:
-        print("⚠ No se pudo actualizar automáticamente el histórico")
+        r = requests.get("https://zqfarma.onrender.com/reporte", timeout=30)
+        print("✅ Histórico actualizado automáticamente. Respuesta:")
+        print(json.dumps(r.json(), indent=2, ensure_ascii=False))
+    except Exception as e:
+        print(f"⚠ No se pudo actualizar automáticamente el histórico: {e}")
 
 threading.Thread(target=actualizar_historico_automatico).start()
+
 
 

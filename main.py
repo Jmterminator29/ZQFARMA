@@ -4,8 +4,6 @@ from fastapi.responses import FileResponse
 from dbfread import DBF
 from dbf import Table, READ_WRITE
 from datetime import datetime
-import threading
-import requests
 import unicodedata
 import os
 
@@ -50,7 +48,6 @@ CAMPOS_HISTORICO = (
 # FUNCIONES AUXILIARES
 # ================================
 def limpiar_ascii(texto):
-    """Convierte texto a ASCII seguro para evitar errores en Render"""
     if isinstance(texto, str):
         return unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('ascii')
     return texto
@@ -96,7 +93,6 @@ def historico_json():
     if not os.path.exists(HISTORICO_DBF):
         return {"total": 0, "datos": []}
     datos = list(DBF(HISTORICO_DBF, load=True, encoding="cp850"))
-    # Limpiar para evitar errores ASCII en Render
     datos_limpios = [{k: limpiar_ascii(v) for k, v in row.items()} for row in datos]
     return {"total": len(datos_limpios), "datos": datos_limpios}
 
@@ -175,7 +171,6 @@ def generar_reporte():
         if nuevos_registros:
             agregar_al_historico(nuevos_registros)
 
-        # 🔥 Limpiar todo antes de devolver
         registros_limpios = [
             {k: limpiar_ascii(v) for k, v in reg.items()}
             for reg in nuevos_registros
@@ -184,7 +179,7 @@ def generar_reporte():
         return {"total": len(registros_limpios), "nuevos": registros_limpios}
 
     except Exception as e:
-        return {"error": limpiar_ascii(e)}
+        return {"error": limpiar_ascii(str(e))}
 
 @app.get("/descargar/historico")
 def descargar_historico():
@@ -196,16 +191,6 @@ def descargar_historico():
         filename=HISTORICO_DBF
     )
 
-# ================================
-# EJECUTAR /REPORTE AUTOMÁTICAMENTE AL INICIAR (SIN LOGS)
-# ================================
-def actualizar_historico_automatico():
-    try:
-        requests.get("https://zqfarma.onrender.com/reporte", timeout=30)
-    except:
-        pass
-
-threading.Thread(target=actualizar_historico_automatico).start()
 
 
 

@@ -193,6 +193,6 @@ def actualizar_historico_automatico():
     except:
         print("⚠ No se pudo actualizar automáticamente el histórico")
 
-# Hilo en segundo plano para no bloquear el servidor
 threading.Thread(target=actualizar_historico_automatico).start()
+
 

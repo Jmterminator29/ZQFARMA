@@ -1,0 +1,27 @@
+name: Actualizar Historico automático y en cada Push
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "0 4 * * *"  # Todos los días a las 04:00 UTC (23:00 Perú)
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repo
+        uses: actions/checkout@v3
+
+      - name: Descargar historico desde Render
+        run: |
+          curl -L https://zqred.onrender.com/descargar/historico -o VENTAS_HISTORICO.DBF
+
+      - name: Subir a GitHub
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add VENTAS_HISTORICO.DBF
+          git commit -m "Actualización automática del histórico"
+          git push

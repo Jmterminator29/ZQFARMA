@@ -196,4 +196,3 @@ def actualizar_historico_automatico():
 # Hilo en segundo plano para no bloquear el servidor
 threading.Thread(target=actualizar_historico_automatico).start()
 
-    )

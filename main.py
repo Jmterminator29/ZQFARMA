@@ -4,6 +4,8 @@ from fastapi.responses import FileResponse
 from dbfread import DBF
 from dbf import Table, READ_WRITE
 from datetime import datetime
+import threading
+import requests
 import os
 
 # ================================
@@ -28,7 +30,6 @@ ZETH70 = "ZETH70.DBF"
 ZETH70_EXT = "ZETH70_EXT.DBF"
 HISTORICO_DBF = "VENTAS_HISTORICO.DBF"
 
-# ✅ Campos esenciales
 CAMPOS_HISTORICO = (
     "EERR C(20);"
     "FECHA D;"
@@ -73,7 +74,7 @@ def obtener_costo_producto(pronum, productos):
     return 0.0
 
 # ================================
-# ENDPOINT RAÍZ
+# ENDPOINTS
 # ================================
 @app.get("/")
 def home():
@@ -84,9 +85,6 @@ def home():
         "descargar": "/descargar/historico → Descarga el archivo DBF"
     }
 
-# ================================
-# ENDPOINT PARA VER HISTÓRICO (FRONTEND)
-# ================================
 @app.get("/historico")
 def historico_json():
     if not os.path.exists(HISTORICO_DBF):
@@ -94,9 +92,6 @@ def historico_json():
     datos = list(DBF(HISTORICO_DBF, load=True, encoding="cp850"))
     return {"total": len(datos), "datos": datos}
 
-# ================================
-# ENDPOINT PRINCIPAL (ACTUALIZA HISTÓRICO)
-# ================================
 @app.get("/reporte")
 def generar_reporte():
     try:
@@ -177,9 +172,6 @@ def generar_reporte():
     except Exception as e:
         return {"error": str(e)}
 
-# ================================
-# ENDPOINT PARA DESCARGAR HISTÓRICO
-# ================================
 @app.get("/descargar/historico")
 def descargar_historico():
     if not os.path.exists(HISTORICO_DBF):
@@ -188,4 +180,20 @@ def descargar_historico():
         HISTORICO_DBF,
         media_type="application/octet-stream",
         filename=HISTORICO_DBF
+    )
+
+# ================================
+# EJECUTAR /REPORTE AUTOMÁTICAMENTE AL INICIAR
+# ================================
+def actualizar_historico_automatico():
+    try:
+        print("⏳ Ejecutando /reporte automáticamente...")
+        requests.get("https://zqfarma.onrender.com/reporte", timeout=20)
+        print("✅ Histórico actualizado automáticamente al iniciar Render")
+    except:
+        print("⚠ No se pudo actualizar automáticamente el histórico")
+
+# Hilo en segundo plano para no bloquear el servidor
+threading.Thread(target=actualizar_historico_automatico).start()
+
     )

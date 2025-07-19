@@ -6,7 +6,6 @@ from dbf import Table, READ_WRITE
 from datetime import datetime
 import threading
 import requests
-import unicodedata
 import os
 
 # ================================
@@ -54,7 +53,6 @@ def crear_dbf_historico():
         table = Table(HISTORICO_DBF, CAMPOS_HISTORICO, codepage="cp850")
         table.open(mode=READ_WRITE)
         table.close()
-        print("VENTAS_HISTORICO.DBF creado.")
 
 def leer_dbf_existente():
     if not os.path.exists(HISTORICO_DBF):
@@ -184,26 +182,16 @@ def descargar_historico():
     )
 
 # ================================
-# EJECUTAR /REPORTE AUTOMÁTICAMENTE AL INICIAR (SIN ASCII RARO)
+# EJECUTAR /REPORTE AUTOMÁTICAMENTE AL INICIAR (SIN LOGS)
 # ================================
-def log_ascii(texto):
-    if not isinstance(texto, str):
-        texto = str(texto)
-    return unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('ascii')
-
 def actualizar_historico_automatico():
     try:
-        print("Ejecutando /reporte automaticamente...")
-        r = requests.get("https://zqfarma.onrender.com/reporte", timeout=30)
-        data = r.json()
-        print("Historico actualizado automaticamente. Total nuevos: " + str(data.get('total', 0)))
-        for reg in data.get("nuevos", []):
-            reg_limpio = {log_ascii(k): log_ascii(v) for k, v in reg.items()}
-            print(reg_limpio)
-    except Exception as e:
-        print("No se pudo actualizar automaticamente el historico: " + log_ascii(e))
+        requests.get("https://zqfarma.onrender.com/reporte", timeout=30)
+    except:
+        pass
 
 threading.Thread(target=actualizar_historico_automatico).start()
+
 
 
 

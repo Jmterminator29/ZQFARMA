@@ -28,7 +28,7 @@ ZETH70 = "ZETH70.DBF"
 ZETH70_EXT = "ZETH70_EXT.DBF"
 HISTORICO_DBF = "VENTAS_HISTORICO.DBF"
 
-# ✅ Solo campos esenciales
+# ✅ Campos esenciales
 CAMPOS_HISTORICO = (
     "EERR C(20);"
     "FECHA D;"
@@ -47,6 +47,12 @@ CAMPOS_HISTORICO = (
 # ================================
 # FUNCIONES AUXILIARES
 # ================================
+def limpiar_texto(valor):
+    """Convierte texto a CP850, reemplazando caracteres no soportados."""
+    if isinstance(valor, str):
+        return valor.encode("cp850", errors="replace").decode("cp850")
+    return valor
+
 def crear_dbf_historico():
     if not os.path.exists(HISTORICO_DBF):
         table = Table(HISTORICO_DBF, CAMPOS_HISTORICO, codepage="cp850")
@@ -55,22 +61,42 @@ def crear_dbf_historico():
         print("✅ VENTAS_HISTORICO.DBF creado.")
 
 def leer_dbf_existente():
+    """Devuelve set de (NUMCHK, PRONUM) ya registrados para evitar duplicados."""
     if not os.path.exists(HISTORICO_DBF):
         return set()
-    return {r["N_TICKET"] for r in DBF(HISTORICO_DBF, load=True, encoding="cp850")}
+    return {(r["N_TICKET"], r["PRONUM"]) for r in DBF(HISTORICO_DBF, load=True, encoding="cp850")}
 
 def agregar_al_historico(nuevos_registros):
-    table = Table(HISTORICO_DBF)
+    """Agrega registros nuevos al histórico."""
+    table = Table(HISTORICO_DBF, codepage="cp850")
     table.open(mode=READ_WRITE)
     for reg in nuevos_registros:
+        # Limpia todos los valores de texto
+        for k, v in reg.items():
+            reg[k] = limpiar_texto(v)
         table.append(reg)
     table.close()
 
 def obtener_costo_producto(pronum, productos):
+    """Obtiene el costo unitario desde ZETH70."""
     producto = productos.get(pronum)
     if producto:
         return float(producto.get("ULCOSREP", 0.0))
     return 0.0
+
+def parsear_fecha(fec):
+    """Normaliza la fecha en datetime.date."""
+    if not fec:
+        return None
+    if isinstance(fec, datetime):
+        return fec.date()
+    if isinstance(fec, str):
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%Y%m%d"):
+            try:
+                return datetime.strptime(fec.strip(), fmt).date()
+            except:
+                continue
+    return None
 
 # ================================
 # ENDPOINT RAÍZ
@@ -105,7 +131,7 @@ def generar_reporte():
                 return {"error": f"No se encontró {archivo}"}
 
         crear_dbf_historico()
-        tickets_existentes = leer_dbf_existente()
+        registros_existentes = leer_dbf_existente()
 
         productos = {r["PRONUM"]: r for r in DBF(ZETH70, load=True, encoding="cp850")}
         productos_ext = (
@@ -115,37 +141,27 @@ def generar_reporte():
         )
         cabeceras = {r["NUMCHK"]: r for r in DBF(ZETH50T, load=True, encoding="cp850")}
 
-        fecha_inicio = datetime(2025, 3, 1)
-        fecha_hoy = datetime.today()
+        fecha_inicio = datetime(2025, 3, 1).date()
+        fecha_hoy = datetime.today().date()
 
         nuevos_registros = []
 
-        for detalle in DBF(ZETH51T, load=True, encoding="cp850"):
-            numchk = detalle["NUMCHK"]
-            if numchk in tickets_existentes:
+        for detalle in DBF(ZETH51T, encoding="cp850"):
+            numchk = detalle.get("NUMCHK", "")
+            pronum = detalle.get("PRONUM", "")
+
+            # Evita duplicados (ticket + producto)
+            if (numchk, pronum) in registros_existentes:
                 continue
 
             cab = cabeceras.get(numchk)
             if not cab:
                 continue
 
-            fecchk = cab.get("FECCHK")
-            if fecchk:
-                if isinstance(fecchk, str):
-                    try:
-                        fecchk = datetime.strptime(fecchk.strip(), "%Y-%m-%d").date()
-                    except:
-                        try:
-                            fecchk = datetime.strptime(fecchk.strip(), "%d/%m/%Y").date()
-                        except:
-                            continue
-                elif isinstance(fecchk, datetime):
-                    fecchk = fecchk.date()
+            fecchk = parsear_fecha(cab.get("FECCHK"))
+            if not fecchk or not (fecha_inicio <= fecchk <= fecha_hoy):
+                continue
 
-                if not (fecha_inicio.date() <= fecchk <= fecha_hoy.date()):
-                    continue
-
-            pronum = detalle.get("PRONUM", "")
             prod_ext = productos_ext.get(pronum, {})
             cost_unit = obtener_costo_producto(pronum, productos)
 
@@ -155,7 +171,7 @@ def generar_reporte():
             nuevo = {
                 "EERR": prod_ext.get("EERR", ""),
                 "FECHA": fecchk,
-                "N_TICKET": cab.get("NUMCHK", ""),
+                "N_TICKET": numchk,
                 "NOMBRES": cab.get("CUSNAM", ""),
                 "TIPO": cab.get("TYPPAG", ""),
                 "CANT": cant,
@@ -172,7 +188,13 @@ def generar_reporte():
         if nuevos_registros:
             agregar_al_historico(nuevos_registros)
 
-        return {"total": len(nuevos_registros), "nuevos": nuevos_registros}
+        total_acumulado = len(DBF(HISTORICO_DBF, load=True, encoding="cp850"))
+
+        return {
+            "nuevos_agregados": len(nuevos_registros),
+            "total_historico": total_acumulado,
+            "nuevos": nuevos_registros
+        }
 
     except Exception as e:
         return {"error": str(e)}

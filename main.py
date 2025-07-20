@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse
 from dbfread import DBF
 from dbf import Table, READ_WRITE
 from datetime import datetime
+import unicodedata
 import os
 
 # ================================
@@ -28,7 +29,6 @@ ZETH70 = "ZETH70.DBF"
 ZETH70_EXT = "ZETH70_EXT.DBF"
 HISTORICO_DBF = "VENTAS_HISTORICO.DBF"
 
-# ✅ Solo campos esenciales
 CAMPOS_HISTORICO = (
     "EERR C(20);"
     "FECHA D;"
@@ -47,12 +47,21 @@ CAMPOS_HISTORICO = (
 # ================================
 # FUNCIONES AUXILIARES
 # ================================
+def limpiar_ascii(valor):
+    """Convierte cualquier valor a ASCII seguro (para evitar errores en Render)"""
+    if isinstance(valor, datetime):
+        return valor.strftime("%Y-%m-%d")
+    if isinstance(valor, (int, float)):
+        return valor
+    if isinstance(valor, str):
+        return unicodedata.normalize('NFKD', valor).encode('ascii', 'ignore').decode('ascii')
+    return str(valor)
+
 def crear_dbf_historico():
     if not os.path.exists(HISTORICO_DBF):
         table = Table(HISTORICO_DBF, CAMPOS_HISTORICO, codepage="cp850")
         table.open(mode=READ_WRITE)
         table.close()
-        print("✅ VENTAS_HISTORICO.DBF creado.")
 
 def leer_dbf_existente():
     if not os.path.exists(HISTORICO_DBF):
@@ -73,30 +82,26 @@ def obtener_costo_producto(pronum, productos):
     return 0.0
 
 # ================================
-# ENDPOINT RAÍZ
+# ENDPOINTS
 # ================================
 @app.get("/")
 def home():
     return {
-        "mensaje": "✅ API activa en Render",
+        "mensaje": "API activa en Render",
         "usar_endpoint": "/historico → Devuelve datos guardados",
         "actualizar": "/reporte → Actualiza el histórico",
         "descargar": "/descargar/historico → Descarga el archivo DBF"
     }
 
-# ================================
-# ENDPOINT PARA VER HISTÓRICO (FRONTEND)
-# ================================
 @app.get("/historico")
 def historico_json():
     if not os.path.exists(HISTORICO_DBF):
         return {"total": 0, "datos": []}
-    datos = list(DBF(HISTORICO_DBF, load=True, encoding="cp850"))
+    datos = []
+    for row in DBF(HISTORICO_DBF, load=True, encoding="cp850"):
+        datos.append({k: limpiar_ascii(v) for k, v in row.items()})
     return {"total": len(datos), "datos": datos}
 
-# ================================
-# ENDPOINT PRINCIPAL (ACTUALIZA HISTÓRICO)
-# ================================
 @app.get("/reporte")
 def generar_reporte():
     try:
@@ -172,14 +177,16 @@ def generar_reporte():
         if nuevos_registros:
             agregar_al_historico(nuevos_registros)
 
-        return {"total": len(nuevos_registros), "nuevos": nuevos_registros}
+        registros_limpios = [
+            {k: limpiar_ascii(v) for k, v in reg.items()}
+            for reg in nuevos_registros
+        ]
+
+        return {"total": len(registros_limpios), "nuevos": registros_limpios}
 
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": limpiar_ascii(str(e))}
 
-# ================================
-# ENDPOINT PARA DESCARGAR HISTÓRICO
-# ================================
 @app.get("/descargar/historico")
 def descargar_historico():
     if not os.path.exists(HISTORICO_DBF):

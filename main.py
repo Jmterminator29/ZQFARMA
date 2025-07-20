@@ -1,10 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from dbfread import DBF
 from dbf import Table, READ_WRITE
-from datetime import datetime
-import unicodedata
+from dbfread import DBF
+from datetime import datetime, date
 import os
 
 # ================================
@@ -21,175 +20,100 @@ app.add_middleware(
 )
 
 # ================================
-# ARCHIVOS DBF
-# ================================
-ZETH50T = "ZETH50T.DBF"
-ZETH51T = "ZETH51T.DBF"
-ZETH70 = "ZETH70.DBF"
-ZETH70_EXT = "ZETH70_EXT.DBF"
-HISTORICO_DBF = "VENTAS_HISTORICO.DBF"
-
-CAMPOS_HISTORICO = (
-    "EERR C(20);"
-    "FECHA D;"
-    "N_TICKET C(10);"
-    "NOMBRES C(50);"
-    "TIPO C(5);"
-    "CANT N(6,0);"
-    "P_UNIT N(12,2);"
-    "CATEGORIA C(20);"
-    "SUB_CAT C(20);"
-    "COST_UNIT N(12,2);"
-    "PRONUM C(10);"
-    "DESCRI C(50)"
-)
-
-# ================================
-# FUNCIONES AUXILIARES
-# ================================
-def limpiar_ascii(texto):
-    if isinstance(texto, str):
-        return unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('ascii')
-    return texto
-
-def crear_dbf_historico():
-    if not os.path.exists(HISTORICO_DBF):
-        table = Table(HISTORICO_DBF, CAMPOS_HISTORICO, codepage="cp850")
-        table.open(mode=READ_WRITE)
-        table.close()
-
-def leer_dbf_existente():
-    if not os.path.exists(HISTORICO_DBF):
-        return set()
-    return {r["N_TICKET"] for r in DBF(HISTORICO_DBF, load=True, encoding="cp850")}
-
-def agregar_al_historico(nuevos_registros):
-    table = Table(HISTORICO_DBF)
-    table.open(mode=READ_WRITE)
-    for reg in nuevos_registros:
-        table.append(reg)
-    table.close()
-
-def obtener_costo_producto(pronum, productos):
-    producto = productos.get(pronum)
-    if producto:
-        return float(producto.get("ULCOSREP", 0.0))
-    return 0.0
-
-# ================================
 # ENDPOINTS
 # ================================
+
 @app.get("/")
-def home():
-    return {
-        "mensaje": "API activa en Render",
-        "usar_endpoint": "/historico → Devuelve datos guardados",
-        "actualizar": "/reporte → Actualiza el histórico",
-        "descargar": "/descargar/historico → Descarga el archivo DBF"
-    }
+def root():
+    return {"status": "OK", "msg": "API DBF Histórico corriendo correctamente"}
 
 @app.get("/historico")
-def historico_json():
-    if not os.path.exists(HISTORICO_DBF):
-        return {"total": 0, "datos": []}
-    datos = list(DBF(HISTORICO_DBF, load=True, encoding="cp850"))
-    datos_limpios = [{k: limpiar_ascii(v) for k, v in row.items()} for row in datos]
-    return {"total": len(datos_limpios), "datos": datos_limpios}
-
-@app.get("/reporte")
-def generar_reporte():
-    try:
-        for archivo in [ZETH50T, ZETH51T, ZETH70]:
-            if not os.path.exists(archivo):
-                return {"error": f"No se encontró {archivo}"}
-
-        crear_dbf_historico()
-        tickets_existentes = leer_dbf_existente()
-
-        productos = {r["PRONUM"]: r for r in DBF(ZETH70, load=True, encoding="cp850")}
-        productos_ext = (
-            {r["PRONUM"]: r for r in DBF(ZETH70_EXT, load=True, encoding="cp850")}
-            if os.path.exists(ZETH70_EXT)
-            else {}
-        )
-        cabeceras = {r["NUMCHK"]: r for r in DBF(ZETH50T, load=True, encoding="cp850")}
-
-        fecha_inicio = datetime(2025, 3, 1)
-        fecha_hoy = datetime.today()
-
-        nuevos_registros = []
-
-        for detalle in DBF(ZETH51T, load=True, encoding="cp850"):
-            numchk = detalle["NUMCHK"]
-            if numchk in tickets_existentes:
-                continue
-
-            cab = cabeceras.get(numchk)
-            if not cab:
-                continue
-
-            fecchk = cab.get("FECCHK")
-            if fecchk:
-                if isinstance(fecchk, str):
-                    try:
-                        fecchk = datetime.strptime(fecchk.strip(), "%Y-%m-%d").date()
-                    except:
-                        try:
-                            fecchk = datetime.strptime(fecchk.strip(), "%d/%m/%Y").date()
-                        except:
-                            continue
-                elif isinstance(fecchk, datetime):
-                    fecchk = fecchk.date()
-
-                if not (fecha_inicio.date() <= fecchk <= fecha_hoy.date()):
-                    continue
-
-            pronum = detalle.get("PRONUM", "")
-            prod_ext = productos_ext.get(pronum, {})
-            cost_unit = obtener_costo_producto(pronum, productos)
-
-            cant = float(detalle.get("QTYPRO", 0))
-            p_unit = float(detalle.get("PRIPRO", 0))
-
-            nuevo = {
-                "EERR": prod_ext.get("EERR", ""),
-                "FECHA": fecchk,
-                "N_TICKET": cab.get("NUMCHK", ""),
-                "NOMBRES": cab.get("CUSNAM", ""),
-                "TIPO": cab.get("TYPPAG", ""),
-                "CANT": cant,
-                "P_UNIT": p_unit,
-                "CATEGORIA": prod_ext.get("CATEGORIA", ""),
-                "SUB_CAT": prod_ext.get("SUB_CAT", ""),
-                "COST_UNIT": cost_unit,
-                "PRONUM": pronum,
-                "DESCRI": prod_ext.get("DESCRI", "")
-            }
-
-            nuevos_registros.append(nuevo)
-
-        if nuevos_registros:
-            agregar_al_historico(nuevos_registros)
-
-        registros_limpios = [
-            {k: limpiar_ascii(v) for k, v in reg.items()}
-            for reg in nuevos_registros
-        ]
-
-        return {"total": len(registros_limpios), "nuevos": registros_limpios}
-
-    except Exception as e:
-        return {"error": limpiar_ascii(str(e))}
+def get_historico():
+    """ Devuelve el contenido del histórico en JSON """
+    if not os.path.exists("VENTAS_HISTORICO.DBF"):
+        return {"status": "error", "msg": "No existe el histórico aún"}
+    
+    data = []
+    for row in DBF("VENTAS_HISTORICO.DBF", load=True, encoding="latin-1"):
+        data.append(dict(row))
+    return {"status": "ok", "data": data}
 
 @app.get("/descargar/historico")
 def descargar_historico():
-    if not os.path.exists(HISTORICO_DBF):
-        return {"error": "El archivo histórico aún no existe."}
-    return FileResponse(
-        HISTORICO_DBF,
-        media_type="application/octet-stream",
-        filename=HISTORICO_DBF
-    )
+    """ Permite descargar el histórico completo como archivo DBF """
+    if not os.path.exists("VENTAS_HISTORICO.DBF"):
+        return {"status": "error", "msg": "No existe el histórico aún"}
+    return FileResponse("VENTAS_HISTORICO.DBF", media_type="application/octet-stream", filename="VENTAS_HISTORICO.DBF")
+
+@app.get("/reporte")
+def generar_historico():
+    """
+    Actualiza el VENTAS_HISTORICO.DBF agregando solo registros nuevos del día.
+    Si el histórico no existe, lo crea desde cero.
+    """
+    hoy = date.today()
+    hoy_str = hoy.strftime("%Y%m%d")
+
+    # Crear histórico si no existe
+    if not os.path.exists("VENTAS_HISTORICO.DBF"):
+        hist = Table(
+            "VENTAS_HISTORICO.DBF",
+            "EERR C(10); FECHA D; N_TICKET C(20); NOMBRES C(100); "
+            "TIPO C(10); CANT N(12,2); P_UNIT N(12,2); "
+            "CATEGORIA C(50); SUB_CAT C(50); COST_UNIT N(12,2); "
+            "PRONUM C(20); DESCRI C(100)",
+            codepage="cp850"
+        )
+        hist.open(mode=READ_WRITE)
+        hist.close()
+
+    # Abrir tablas originales
+    cabecera = DBF("ZETH50T.DBF", load=True, encoding="latin-1")
+    detalle = DBF("ZETH51T.DBF", load=True, encoding="latin-1")
+    productos = DBF("ZETH70.DBF", load=True, encoding="latin-1")
+
+    hist = Table("VENTAS_HISTORICO.DBF")
+    hist.open(mode=READ_WRITE)
+
+    # Cargar tickets ya existentes en el histórico
+    tickets_existentes = {r["N_TICKET"] for r in hist}
+
+    nuevos = 0
+    for cab in cabecera:
+        if str(cab["FECCHK"]) == hoy_str:
+            n_ticket = cab["NUMCHK"]
+
+            if n_ticket in tickets_existentes:
+                continue  # Ya existe en histórico, no se inserta
+
+            nombre = cab["CUSNAM"]
+            tipo = cab["TYPMOV"]
+            eerr = str(hoy.year)  # Puedes personalizarlo si es otro cálculo
+
+            # Buscar detalles del ticket
+            for det in detalle:
+                if det["NUMCHK"] == n_ticket:
+                    pronum = det["PRONUM"]
+                    cant = det["QTYPRO"]
+                    p_unit = det["PRIPRO"]
+
+                    # Buscar datos adicionales del producto
+                    cat = subcat = ""
+                    cost_unit = 0
+                    for prod in productos:
+                        if prod["PRONUM"] == pronum:
+                            cat = prod["CATEGORIA"] if "CATEGORIA" in prod else ""
+                            subcat = prod["SUB_CAT"] if "SUB_CAT" in prod else ""
+                            cost_unit = prod["ULCOSREP"] if "ULCOSREP" in prod else 0
+
+                    hist.append((
+                        eerr, hoy, n_ticket, nombre, tipo, cant, p_unit,
+                        cat, subcat, cost_unit, pronum, det["DESCRI"]
+                    ))
+                    nuevos += 1
+
+    hist.close()
+    return {"status": "ok", "msg": f"Histórico actualizado. Nuevos registros: {nuevos}"}
 
 
 
